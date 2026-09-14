@@ -21,7 +21,13 @@ const removedPanel = document.querySelector("#removed-panel");
 const removedCardsElement = document.querySelector("#removed-cards");
 const cardReferenceElement = document.querySelector("#card-reference");
 const privateToast = document.querySelector("#private-toast");
+const restartGameButton = document.querySelector(
+  "#restart-game-button"
+);
 
+const leaveGameButton = document.querySelector(
+  "#leave-game-button"
+);
 function escapeHtml(value) {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -43,6 +49,19 @@ function saveSession(code, token, name) {
 
 function getSavedToken(code) {
   return localStorage.getItem(tokenKey(code)) || "";
+}
+function clearRoomSession(code) {
+  if (!code) return;
+
+  localStorage.removeItem(tokenKey(code));
+
+  const lastRoom = localStorage.getItem(
+    "love-letter-last-room"
+  );
+
+  if (lastRoom === code) {
+    localStorage.removeItem("love-letter-last-room");
+  }
 }
 
 function showError(message) {
@@ -70,10 +89,14 @@ function showActionError(message) {
 
 function enterGame(code) {
   currentRoomCode = code;
+
   homeScreen.classList.add("hidden");
   gameScreen.classList.remove("hidden");
+
   roomCodeElement.classList.remove("hidden");
   roomCodeElement.textContent = `SALON ${code}`;
+
+  leaveGameButton.classList.remove("hidden");
 }
 
 createButton.addEventListener("click", () => {
@@ -112,7 +135,52 @@ joinButton.addEventListener("click", () => {
     }
   );
 });
+leaveGameButton.addEventListener("click", () => {
+  if (!state?.code) return;
 
+  const confirmation = window.confirm(
+    "Voulez-vous vraiment quitter cette partie ?"
+  );
+
+  if (!confirmation) return;
+
+  const code = state.code;
+
+  socket.emit("leaveRoom", {}, (result) => {
+    if (!result?.ok) {
+      window.alert(
+        result?.message || "Impossible de quitter la partie."
+      );
+      return;
+    }
+
+    clearRoomSession(code);
+
+    state = null;
+    currentRoomCode = null;
+
+    window.location.href = "/";
+  });
+});
+restartGameButton.addEventListener("click", () => {
+  if (!state?.self) return;
+
+  const confirmation = window.confirm(
+    "Recommencer toute la partie ? " +
+    "Les manches et les pions Faveur seront remis à zéro."
+  );
+
+  if (!confirmation) return;
+
+  socket.emit("restartGame", {}, (result) => {
+    if (!result?.ok) {
+      window.alert(
+        result?.message ||
+        "Impossible de recommencer la partie."
+      );
+    }
+  });
+});
 joinCodeInput.addEventListener("input", () => {
   joinCodeInput.value = joinCodeInput.value
     .toUpperCase()
@@ -178,6 +246,7 @@ socket.on("privateMessage", (message) => {
 function render() {
   if (!state?.self) return;
 
+  renderHeaderControls();
   renderStatus();
   renderPlayers();
   renderHand();
@@ -190,6 +259,22 @@ function render() {
     state.status === "lobby"
       ? ""
       : `Pioche : ${state.deckCount} carte(s)`;
+}
+
+function renderHeaderControls() {
+  leaveGameButton.classList.remove("hidden");
+
+  const isHost = state.hostId === state.self.id;
+  const gameHasStarted = state.status !== "lobby";
+
+  restartGameButton.classList.toggle(
+    "hidden",
+    !isHost || !gameHasStarted
+  );
+}
+
+function renderStatus() {
+  // Le reste de ton code...
 }
 
 function renderStatus() {

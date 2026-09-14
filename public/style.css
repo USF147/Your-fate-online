@@ -447,3 +447,25 @@ main {
     width: 100%;
   }
 }
+.header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.header-actions button {
+  padding: 9px 12px;
+}
+
+@media (max-width: 600px) {
+  .header-actions {
+    justify-content: flex-end;
+  }
+
+  .header-actions .room-code {
+    width: 100%;
+    text-align: center;
+  }
+}

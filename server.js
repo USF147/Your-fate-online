@@ -332,6 +332,221 @@ function resetPlayerForRound(player) {
   player.playedChronicle = false;
 }
 
+function resetRoomToLobby(room, message) {
+  room.status = "lobby";
+  room.phase = "lobby";
+  room.round = 0;
+  room.deck = [];
+  room.burnCard = null;
+  room.removedVisible = [];
+  room.currentIndex = -1;
+  room.pending = null;
+  room.winnerIds = [];
+  room.nextStarterId = null;
+
+  for (const player of room.players) {
+    player.favors = 0;
+    player.hand = [];
+    player.discards = [];
+    player.alive = false;
+    player.protected = false;
+    player.skipTurns = 0;
+    player.playedChronicle = false;
+  }
+
+  addLog(room, message);
+}
+function removePlayerFromRoom(room, player) {
+  const removedIndex = room.players.findIndex(
+    (candidate) => candidate.id === player.id
+  );
+
+  if (removedIndex < 0) return;
+
+  const removedPlayerWasCurrent =
+    room.currentIndex === removedIndex;
+
+  const removedPlayerWasPendingActor =
+    room.pending?.actorId === player.id;
+
+  const removedPlayerWasPendingTarget =
+    room.pending?.targetId === player.id;
+
+  const pendingCardName = room.pending?.cardName;
+  const removedPlayerName = player.name;
+
+  /*
+    On retire réellement le joueur de la liste du salon.
+  */
+  room.players.splice(removedIndex, 1);
+
+  player.connected = false;
+  player.socketId = null;
+
+  addLog(
+    room,
+    `${removedPlayerName} a quitté la partie.`
+  );
+
+  /*
+    Si le salon est vide, il est définitivement supprimé.
+  */
+  if (room.players.length === 0) {
+    if (room.emptyTimer) {
+      clearTimeout(room.emptyTimer);
+    }
+
+    rooms.delete(room.code);
+    return;
+  }
+
+  /*
+    Si l'hôte est parti, le premier joueur restant
+    devient le nouvel hôte.
+  */
+  if (room.hostId === player.id) {
+    room.hostId = room.players[0].id;
+
+    addLog(
+      room,
+      `${room.players[0].name} devient le nouvel hôte.`
+    );
+  }
+
+  /*
+    Corrige l'indice du tour après le retrait du joueur.
+  */
+  if (
+    room.currentIndex >= 0 &&
+    removedIndex < room.currentIndex
+  ) {
+    room.currentIndex -= 1;
+  }
+
+  /*
+    Si c'était au joueur retiré de jouer, le joueur suivant
+    se trouve maintenant au même emplacement dans la liste.
+  */
+  if (removedPlayerWasCurrent) {
+    room.currentIndex =
+      removedIndex % room.players.length;
+  }
+
+  /*
+    S'il reste moins de deux joueurs pendant une partie,
+    la partie est interrompue et le salon revient à l'accueil.
+  */
+  if (
+    room.players.length < 2 &&
+    room.status !== "lobby"
+  ) {
+    resetRoomToLobby(
+      room,
+      "La partie a été interrompue : il faut au moins deux joueurs."
+    );
+
+    broadcastRoom(room);
+    return;
+  }
+
+  /*
+    Dans le salon d'attente, il suffit d'actualiser
+    l'affichage des joueurs.
+  */
+  if (room.status === "lobby") {
+    broadcastRoom(room);
+    return;
+  }
+
+  /*
+    Si le Voleur qui devait choisir une victime quitte,
+    la manche se termine sans effectuer le vol.
+  */
+  if (
+    room.phase === "steal" &&
+    removedPlayerWasPendingActor
+  ) {
+    finalizeRound(room);
+    return;
+  }
+
+  /*
+    Si le joueur qui devait agir quitte en pleine action,
+    son tour est abandonné et le joueur suivant commence.
+  */
+  if (
+    room.status === "playing" &&
+    (
+      removedPlayerWasCurrent ||
+      removedPlayerWasPendingActor
+    )
+  ) {
+    room.pending = null;
+
+    if (activePlayers(room).length <= 1) {
+      endRound(room);
+      return;
+    }
+
+    startCurrentTurn(room);
+    return;
+  }
+
+  /*
+    Si la cible d'une devinette quitte, l'auteur de
+    l'action doit choisir une autre cible.
+  */
+  if (
+    room.status === "playing" &&
+    removedPlayerWasPendingTarget
+  ) {
+    const actor = getPlayer(
+      room,
+      room.pending?.actorId
+    );
+
+    if (
+      actor &&
+      actor.alive &&
+      hasValidTarget(room, actor, false)
+    ) {
+      room.phase = "target";
+
+      room.pending = {
+        kind: "target",
+        actorId: actor.id,
+        cardName: pendingCardName,
+        targetId: null
+      };
+
+      addLog(
+        room,
+        `${actor.name} doit choisir une nouvelle cible.`
+      );
+
+      broadcastRoom(room);
+      return;
+    }
+
+    finishTurn(room);
+    return;
+  }
+
+  /*
+    Si le départ laisse un seul joueur actif,
+    la manche se termine.
+  */
+  if (
+    room.status === "playing" &&
+    activePlayers(room).length <= 1
+  ) {
+    endRound(room);
+    return;
+  }
+
+  broadcastRoom(room);
+}
+
 function startRound(room) {
   room.round += 1;
   room.status = "playing";
@@ -1363,9 +1578,11 @@ io.on("connection", (socket) => {
         pending: null,
         logs: [`${name} a créé le salon.`],
         winnerIds: [],
-        nextStarterId: null
+        nextStarterId: null,
+        emptyTimer: null
       };
 
+      
       rooms.set(code, room);
 
       socket.join(code);
@@ -1394,6 +1611,10 @@ io.on("connection", (socket) => {
 
       if (!room) {
         return failure(callback, "Salon introuvable.");
+      }
+      if (room.emptyTimer) {
+       clearTimeout(room.emptyTimer);
+       room.emptyTimer = null;
       }
 
       const providedToken = String(data?.token || "");
@@ -1663,6 +1884,42 @@ io.on("connection", (socket) => {
       failure(callback, error.message);
     }
   });
+socket.on("leaveRoom", (_, callback) => {
+  try {
+    const room = getRoom(socket);
+    const player = getSocketPlayer(socket, room);
+
+    if (!room || !player) {
+      return failure(
+        callback,
+        "Vous n'êtes dans aucun salon."
+      );
+    }
+
+    const roomCode = room.code;
+
+    /*
+      Retire réellement le joueur du salon.
+    */
+    removePlayerFromRoom(room, player);
+
+    /*
+      Retire également la connexion Socket.IO du salon.
+    */
+    socket.leave(roomCode);
+
+    /*
+      La connexion ne doit plus être associée
+      à l'ancien salon et à l'ancien joueur.
+    */
+    socket.data.roomCode = null;
+    socket.data.playerId = null;
+
+    success(callback);
+  } catch (error) {
+    failure(callback, error.message);
+  }
+});
 
   socket.on("disconnect", () => {
     const room = getRoom(socket);
@@ -1670,11 +1927,48 @@ io.on("connection", (socket) => {
 
     if (!room || !player) return;
 
+    /*
+      Si le joueur s'est déjà reconnecté avec une autre
+      connexion, on ne déconnecte pas la nouvelle connexion.
+    */
+    if (player.socketId !== socket.id) return;
+
     player.connected = false;
     player.socketId = null;
 
     addLog(room, `${player.name} s'est déconnecté.`);
     broadcastRoom(room);
+
+    const nobodyIsConnected = room.players.every(
+      (candidate) => !candidate.connected
+    );
+
+    if (!nobodyIsConnected) return;
+
+    if (room.emptyTimer) {
+      clearTimeout(room.emptyTimer);
+    }
+
+    room.emptyTimer = setTimeout(() => {
+      const existingRoom = rooms.get(room.code);
+
+      if (!existingRoom) return;
+
+      const stillNobodyConnected =
+        existingRoom.players.every(
+          (candidate) => !candidate.connected
+        );
+
+      if (stillNobodyConnected) {
+        rooms.delete(room.code);
+
+        console.log(
+          `Salon ${room.code} supprimé : aucun joueur connecté.`
+        );
+      } else {
+        existingRoom.emptyTimer = null;
+      }
+    }, 30000);
   });
 });
 
