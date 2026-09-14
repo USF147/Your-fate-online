@@ -1,0 +1,17 @@
+{
+  "name": "your-fate-online",
+  "version": "1.0.0",
+  "description": "Jeu multijoueur en ligne Your Fate",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "socket.io": "^4.8.1"
+  }
+}

@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  >
+  <title>Your Fate — Variante en ligne</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+
+<body>
+  <header>
+    <div>
+      <h1>Your Fate</h1>
+      <p>Variante multijoueur en ligne</p>
+    </div>
+
+    <div id="room-code" class="room-code hidden"></div>
+  </header>
+
+  <main>
+    <section id="home-screen" class="panel home-panel">
+      <h2>Jouer avec vos amis</h2>
+
+      <label for="player-name">Votre pseudonyme</label>
+      <input
+        id="player-name"
+        maxlength="20"
+        placeholder="Votre nom"
+        autocomplete="nickname"
+      >
+
+      <div class="home-actions">
+        <button id="create-button" class="primary">
+          Créer un salon
+        </button>
+
+        <div class="separator">ou</div>
+
+        <label for="join-code">Code du salon</label>
+        <input
+          id="join-code"
+          maxlength="5"
+          placeholder="ABCDE"
+          autocomplete="off"
+        >
+
+        <button id="join-button">
+          Rejoindre le salon
+        </button>
+      </div>
+
+      <p id="home-error" class="error"></p>
+    </section>
+
+    <section id="game-screen" class="hidden">
+      <div class="game-layout">
+        <section class="main-column">
+          <div id="status-panel" class="panel"></div>
+
+          <div class="panel">
+            <div class="section-title">
+              <h2>Joueurs</h2>
+              <span id="deck-count"></span>
+            </div>
+
+            <div id="players" class="players"></div>
+          </div>
+
+          <div id="action-panel" class="panel">
+            <h2>Action</h2>
+            <div id="actions"></div>
+          </div>
+
+          <div class="panel">
+            <h2>Votre main</h2>
+            <div id="hand" class="cards"></div>
+          </div>
+
+          <div id="removed-panel" class="panel hidden">
+            <h2>Cartes retirées face visible</h2>
+            <div id="removed-cards" class="cards compact"></div>
+          </div>
+        </section>
+
+        <aside class="side-column">
+          <section class="panel">
+            <h2>Historique public</h2>
+            <div id="logs" class="logs"></div>
+          </section>
+
+          <section class="panel">
+            <details>
+              <summary>Liste des cartes</summary>
+              <div id="card-reference"></div>
+            </details>
+          </section>
+        </aside>
+      </div>
+    </section>
+  </main>
+
+  <div id="private-toast" class="toast hidden"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/client.js"></script>
+</body>
+</html>
